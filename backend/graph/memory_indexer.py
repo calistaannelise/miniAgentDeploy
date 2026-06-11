@@ -118,7 +118,12 @@ class MemoryIndexer:
         self.base_dir = base_dir
         self.memory_dir = base_dir / "memory"
         self.memory_path = self.memory_dir / "MEMORY.md"
-        self._storage_path = base_dir / "storage" / "memory_index"
+        # The index storage is a pure output tree — redirect it to a writable
+        # root on read-only deploys (e.g. Vercel) while memory *content* is
+        # still read from ``base_dir/memory``. Locally this is unchanged.
+        from runtime_paths import resolve_data_dir
+
+        self._storage_path = resolve_data_dir(base_dir) / "storage" / "memory_index"
         self._index: Optional[Any] = None
         self._nodes: list = []
         self._sections: list[_MemorySection] = []

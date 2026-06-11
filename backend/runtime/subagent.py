@@ -255,6 +255,11 @@ def _write_artifact(
     created_at: datetime,
     payload: dict[str, Any],
 ) -> tuple[str, Path]:
+    # ``artifacts/`` is a pure output tree, so redirect to a writable root on
+    # read-only deploys (e.g. Vercel). Locally this is ``base_dir`` unchanged.
+    from runtime_paths import resolve_data_dir
+
+    base_dir = resolve_data_dir(base_dir)
     relative_run_dir = build_run_directory(
         SUBAGENT_WORKFLOW_SLUG,
         created_at=created_at,

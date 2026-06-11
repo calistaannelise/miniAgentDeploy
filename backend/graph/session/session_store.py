@@ -136,7 +136,13 @@ def _fingerprint_prefix(stable_prefix: str, tool_names: tuple[str, ...]) -> str:
 
 class SessionStore:
     def __init__(self, base_dir: Path) -> None:
-        self.sessions_dir = base_dir / "sessions"
+        # ``sessions/`` is a pure output tree, so redirect it to a writable
+        # root on read-only deploys (e.g. Vercel) while leaving resource reads
+        # on ``base_dir``. Locally this resolves back to ``base_dir`` unchanged.
+        from runtime_paths import resolve_data_dir
+
+        data_dir = resolve_data_dir(base_dir)
+        self.sessions_dir = data_dir / "sessions"
         self.archive_dir = self.sessions_dir / "archive"
         self.quarantine_dir = self.sessions_dir / "_quarantine"
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
