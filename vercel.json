@@ -3,7 +3,8 @@
         "frontend": {
             "root": "frontend",
             "routePrefix": "/",
-            "framework": "nextjs"
+            "framework": "nextjs",
+            "buildCommand": "next build"
         },
         "backend": {
             "root": "backend",
