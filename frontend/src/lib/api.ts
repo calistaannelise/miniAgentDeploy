@@ -143,7 +143,12 @@ export function resolveBearerToken(scope: ApiAccessScope): string | null {
 }
 
 function buildApiUrl(path: string, query?: QueryParams): string {
-  const url = new URL(path, getBase());
+  // Join base + path by concatenation rather than `new URL(path, base)`: an
+  // absolute path like "/api/chat" would otherwise *replace* any path prefix
+  // on the base (e.g. the "/_/backend" mount when the backend is deployed
+  // under a sub-path on Vercel), sending requests to the wrong origin path.
+  const base = getBase().replace(/\/+$/, "");
+  const url = new URL(`${base}${path}`);
   const searchParams = new URLSearchParams(url.search);
   Object.entries(query ?? {}).forEach(([key, rawValue]) => {
     const values = Array.isArray(rawValue) ? rawValue : [rawValue];
