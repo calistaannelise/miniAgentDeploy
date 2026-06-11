@@ -39,14 +39,20 @@ a file-first app. Timeline of crashes seen in the Vercel function logs:
    **Fix:** wrapped `scan_skills()` in `app.py` in try/except (non-fatal); the
    pre-generated `SKILLS_SNAPSHOT.md` is committed so it's readable at runtime.
 
-2. **401 / 403 on every request — loopback auth**
-   Vercel routes through an internal proxy that adds `x-forwarded-for`, so the
-   "loopback bypass" in `access_control.py` never fired and all requests were
-   rejected (no bearer token configured).
-   **Fix:** committed `backend/config.json` with
-   `production_hardening.api.trust_forwarded_loopback_headers: true` and added
-   the prod origin to `cors_allowed_origins`. (Also un-ignored `config.json`
-   and `SKILLS_SNAPSHOT.md` in `.gitignore` so they actually deploy.)
+2. **403 on every gated request — loopback auth fails on serverless**
+   `access_control.py` grants unauthenticated access only to *loopback*
+   clients (`request.client.host` is `127.0.0.1`/`::1`). On Vercel the request
+   arrives through the platform proxy, so `is_loopback_client()` is always
+   False and the gate rejects everything with
+   `"This route requires local access or a configured bearer token."`
+   **Important:** an early attempt set
+   `trust_forwarded_loopback_headers: true` — this does **not** help, because
+   that flag is only consulted *after* loopback is already detected, which
+   never happens on Vercel. It was removed.
+   **Real fix:** configure a **bearer token** (see "Bearer-token auth" below).
+   Also committed `backend/config.json` and added the prod origin to
+   `cors_allowed_origins`. (And un-ignored `config.json` and
+   `SKILLS_SNAPSHOT.md` in `.gitignore` so they actually deploy.)
 
 3. **500 — Pydantic `extra_forbidden` ValidationError**
    `RuntimeConfigModel` (in `runtime_config_types.py`) was missing four fields
@@ -63,7 +69,104 @@ a file-first app. Timeline of crashes seen in the Vercel function logs:
    `SessionStore.__init__` called `mkdir()` on `base_dir/sessions`.
    **Fix (stopgap):** redirect pure-output trees to `/tmp` — see below.
 
+5. **Frontend "chat is unavailable" — two frontend bugs in `api.ts`**
+   a. `buildApiUrl` used `new URL(path, base)`. Because API paths are absolute
+   (`/api/chat`), the `URL` constructor *drops* the base's path, turning
+   `https://bioapex.vercel.app/_/backend` + `/api/chat` into
+   `https://bioapex.vercel.app/api/chat` (the `/_/backend` mount vanished).
+   **Fix:** build the URL by concatenation (`base + path`) so the mount prefix
+   is preserved.
+   b. `getBase()` only fell back to `http://<hostname>:8002` (a dead port on
+   Vercel) when `NEXT_PUBLIC_API_URL` was absent — and `NEXT_PUBLIC_*` vars are
+   inlined at **build time**, so a var set after/around the build was missing
+   from the shipped JS.
+   **Fix:** `getBase()` now falls back to same-origin `${origin}/_/backend`
+   when deployed, so the frontend reaches the backend even without the env var.
+   Verified the `405` on `GET /_/backend/api/chat` afterwards — route resolves;
+   405 just means chat is POST-only. (`GET /_/backend/api` → 404 is normal:
+   there is no bare `/api` route.)
+
+6. **Frontend API calls blocked by Vercel Deployment Protection — NOT our code**
+   After the URL fixes, `fetch()` calls to `/_/backend/...` returned **401 with
+   an HTML body** and a `set-cookie: _vercel_sso_nonce=...` header. That is
+   **Vercel Deployment Protection** ("Vercel Authentication") intercepting the
+   request at the edge and returning its login page **before the request ever
+   reaches the FastAPI backend**. Our backend returns *JSON* 401s
+   (`{"detail": "..."}`); an *HTML* 401 + `_vercel_sso_nonce` cookie is always
+   Vercel's gate, not ours.
+
+   **Why it blocks you even though you're a project member:** Deployment
+   Protection doesn't check "is this user a member?" per request — it checks
+   "does this request carry a valid Vercel auth session?" You get that session
+   only through an **interactive login redirect**, which only happens on
+   **top-level page navigation** (so the page loads fine). A background
+   `fetch()` **cannot** follow an interactive login redirect — it just receives
+   the login page as data and fails with 401. So a logged-in human can load the
+   page, but the page's own API calls are still blocked. This is a known
+   incompatibility between Deployment Protection and the
+   "SPA calls its own protected backend" pattern.
+
+   Symptom tell-tales: response `content-type: text/html` (not JSON),
+   `set-cookie: _vercel_sso_nonce`, and it happens on every API call
+   regardless of bearer token.
+
+   **Fix:** Vercel Dashboard → Project → **Settings → Deployment Protection** →
+   set **Vercel Authentication** to **Disabled**, Save, redeploy. The backend's
+   own **bearer-token** auth (below) then becomes the real access control for
+   the now-public backend — keep it enabled, since the `dev` posture leaves
+   code-execution tools on. (Vercel's "Protection Bypass for Automation" token
+   is *not* a usable alternative here: it would have to be embedded in the
+   public frontend JS, which protects nothing — same effect as disabling.)
+
+   **Note on preview URLs:** Deployment Protection defaults to ON for *preview*
+   deployments, and each push gets a fresh preview URL (a new origin). Combined
+   with bearer tokens being stored in `localStorage` keyed by origin, this
+   means re-entering the token on every preview. **Test on the stable
+   production URL (`https://bioapex.vercel.app`)** and confirm protection is off
+   there too.
+
 ---
+
+## Bearer-token auth (current access model on Vercel)
+
+Because loopback never works on serverless (bug #2), gated routes require a
+**bearer token** on Vercel. Local dev is unaffected — it still uses the
+loopback bypass and needs no token.
+
+**Config** (`backend/config.json`): all three scopes point at one env var so a
+single token value authorizes everything:
+
+```json
+"api": {
+  "allow_loopback_without_auth": true,
+  "inspection_bearer_token_env_var": "BIOAPEX_API_TOKEN",
+  "execution_bearer_token_env_var": "BIOAPEX_API_TOKEN",
+  "admin_bearer_token_env_var": "BIOAPEX_API_TOKEN"
+}
+```
+
+**Setup checklist:**
+1. Set `BIOAPEX_API_TOKEN=<secret>` on the **backend** service in Vercel, then
+   redeploy. (Generate one with `python -c "import secrets; print(secrets.token_urlsafe(32))"`.)
+2. In the app's navbar access panel, paste the same value into the
+   **Inspection** and **Execution** token fields (Admin optional) and click
+   **Apply Tokens**. The token persists in browser localStorage per-domain.
+
+**Probe responses & what they mean:** `200` granted ✓ · `503` env var unset in
+Vercel (or not redeployed) · `401` UI token ≠ Vercel value · `403` old
+deployment without the new `config.json`.
+
+**How auth resolves** (`access_control.py::determine_route_access_mode`): try
+loopback bypass (fails on Vercel) → look up the scope's token env var → `503`
+if the env var is empty → `401` if the presented `Authorization: Bearer …`
+header doesn't match → otherwise grant `"bearer"`.
+
+> **Future:** when the backend moves to a persistent host (see "The Proper
+> Fix"), keep bearer-token auth (or move to a stronger posture in
+> `hardening.py`) since the backend remains publicly reachable. The agent has
+> code-execution tools enabled under the `dev` posture — do **not** switch to
+> unauthenticated/open access on a public URL, or a visitor could have the
+> agent read secrets (e.g. `DEEPSEEK_API_KEY`) out of the environment.
 
 ## The `/tmp` stopgap (what's implemented now)
 
@@ -115,11 +218,13 @@ writable disk**. Vercel serverless gives you neither. Options, best first:
    always-on process:
    - **Render** (Web Service + Persistent Disk), **Railway** (volume),
      **Fly.io** (volume), or a small VM (Hetzner / DigitalOcean / EC2).
-   - Point the frontend's `NEXT_PUBLIC_API_URL` at the new backend URL.
-   - Remove the `/tmp` stopgap (or leave it — it's a no-op on a writable host)
-     and drop `trust_forwarded_loopback_headers` in favor of a real
-     **bearer-token** auth posture (`trusted-lab` / `hosted-strict` in
-     `hardening.py`), since the backend will now be publicly reachable.
+   - Point the frontend's `NEXT_PUBLIC_API_URL` at the new backend URL (and/or
+     update the deployed-fallback origin in `getBase()` if it's not same-origin
+     anymore).
+   - Remove the `/tmp` stopgap (or leave it — it's a no-op on a writable host).
+     Keep the **bearer-token** auth (or move to a stronger posture —
+     `trusted-lab` / `hosted-strict` in `hardening.py`), since the backend
+     stays publicly reachable.
    - Mount the persistent disk at the backend project root (or set
      `BIOAPEX_DATA_DIR` to the mounted volume path).
 
@@ -142,11 +247,13 @@ code, and gives you real persistence.
 - `backend/graph/memory_indexer.py` — index storage redirect.
 - `backend/runtime/subagent.py` — subagent artifact redirect.
 - `backend/app.py` — `scan_skills()` made non-fatal.
-- `backend/config.json` — CORS + forwarded-loopback trust (committed).
+- `backend/config.json` — CORS + bearer-token env var names (committed).
 - `backend/runtime_config_types.py` — the four missing Pydantic fields.
+- `frontend/src/lib/api.ts` — URL-prefix fix + same-origin `/_/backend`
+  fallback in `getBase()`.
 - `vercel.json` — frontend + backend service config (`/_/backend` route).
 - `.gitignore` — un-ignored `config.json` and `SKILLS_SNAPSHOT.md`.
 
-When migrating to a persistent host, revisit `trust_forwarded_loopback_headers`
-(it's a security loosening that only made sense because Vercel's proxy looked
-non-loopback) and set up proper bearer-token auth instead.
+When migrating to a persistent host, keep bearer-token auth (the backend stays
+publicly reachable) and reconsider the `dev` posture, which leaves
+code-execution tools enabled.
