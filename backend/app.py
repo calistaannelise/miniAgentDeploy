@@ -55,8 +55,13 @@ async def lifespan(app: FastAPI):
     # ── 1. Scan skills → generate SKILLS_SNAPSHOT.md ──────────────
     from tools.skills_scanner import scan_skills
 
-    scan_skills(BASE_DIR)
-    print("[startup] Skills scanned → SKILLS_SNAPSHOT.md generated")
+    try:
+        scan_skills(BASE_DIR)
+        print("[startup] Skills scanned → SKILLS_SNAPSHOT.md generated")
+    except Exception as exc:
+        # On read-only filesystems (e.g. Vercel) the write fails; the committed
+        # snapshot is still readable so this is non-fatal.
+        print(f"[WARNING] Skills scan write failed (non-fatal): {exc}")
 
     # ── 2. Initialise AgentManager ─────────────────────────────────
     from graph.agent import agent_manager

@@ -21,8 +21,6 @@ build/
 # ── Backend runtime data ───────────────────────────────
 backend/sessions/
 backend/storage/
-backend/config.json
-backend/SKILLS_SNAPSHOT.md
 backend/artifacts/__pycache__/
 
 # ── Node ──────────────────────────────────────────────

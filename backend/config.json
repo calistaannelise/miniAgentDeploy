@@ -1,0 +1,16 @@
+{
+  "production_hardening": {
+    "posture": "dev",
+    "api": {
+      "allow_loopback_without_auth": true,
+      "trust_forwarded_loopback_headers": true,
+      "cors_allowed_origins": [
+        "https://bioapex.vercel.app",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001"
+      ]
+    }
+  }
+}
