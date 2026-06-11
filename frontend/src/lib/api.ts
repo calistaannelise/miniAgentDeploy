@@ -28,9 +28,18 @@ export { ApiPayloadError, isApiPayloadError };
 export type { StreamCallbacks };
 
 function getBase(): string {
+  // Explicit override always wins (build-time inlined by Next.js).
   if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
   if (typeof window === "undefined") return "http://localhost:8002";
-  return `http://${window.location.hostname}:8002`;
+  const { hostname, origin } = window.location;
+  // Local dev: the backend runs on its own port (8002).
+  if (hostname === "localhost" || hostname === "127.0.0.1") {
+    return `http://${hostname}:8002`;
+  }
+  // Deployed: the backend is mounted same-origin under "/_/backend"
+  // (see vercel.json routePrefix). This makes the frontend reach the backend
+  // without relying on NEXT_PUBLIC_API_URL being present at build time.
+  return `${origin}/_/backend`;
 }
 
 export type ApiAccessScope = "public" | "inspection" | "execution" | "admin";
