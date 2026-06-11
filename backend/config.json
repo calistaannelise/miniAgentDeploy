@@ -3,7 +3,9 @@
     "posture": "dev",
     "api": {
       "allow_loopback_without_auth": true,
-      "trust_forwarded_loopback_headers": true,
+      "inspection_bearer_token_env_var": "BIOAPEX_API_TOKEN",
+      "execution_bearer_token_env_var": "BIOAPEX_API_TOKEN",
+      "admin_bearer_token_env_var": "BIOAPEX_API_TOKEN",
       "cors_allowed_origins": [
         "https://bioapex.vercel.app",
         "http://localhost:3000",
