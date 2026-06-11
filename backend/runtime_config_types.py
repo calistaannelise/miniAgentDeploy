@@ -85,6 +85,15 @@ class VerificationModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     retry_on_repair_required: bool = True
+    verifier_max_wall_s: int = Field(default=0, ge=0)
+    verifier_max_tokens: int = Field(default=0, ge=0)
+
+
+class ToolWallclockModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    default_seconds: float = Field(default=0.0, ge=0)
+    overrides: dict[str, float] = Field(default_factory=dict)
 
 
 class LLMOutputTokenCapModel(BaseModel):
@@ -252,6 +261,8 @@ class RuntimeConfigModel(BaseModel):
     rag_mode: RagMode = "off"
     deterministic_seed: int | None = None
     max_tokens_per_turn: int = Field(default=200_000, ge=0)
+    max_turn_wallclock_s: float = Field(default=0.0, ge=0)
+    tool_wallclock: ToolWallclockModel = Field(default_factory=ToolWallclockModel)
     production_hardening: ProductionHardeningInputModel = Field(
         default_factory=ProductionHardeningInputModel
     )
