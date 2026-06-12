@@ -365,7 +365,7 @@ export default function Navbar() {
             </button>
 
             {accessPanelOpen ? (
-              <div className="absolute right-0 top-full z-50 mt-2 w-[min(26rem,calc(100vw-2rem))] rounded-[22px] border border-[var(--shell-border)] bg-[rgba(255,255,255,0.98)] p-4 shadow-[0_20px_48px_rgba(29,42,33,0.14)] backdrop-blur">
+              <div className="absolute right-0 top-full z-50 mt-2 max-h-[calc(100vh-6rem)] w-[min(26rem,calc(100vw-2rem))] overflow-y-auto overscroll-contain rounded-[22px] border border-[var(--shell-border)] bg-[rgba(255,255,255,0.98)] p-4 shadow-[0_20px_48px_rgba(29,42,33,0.14)] backdrop-blur">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
