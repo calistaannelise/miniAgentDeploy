@@ -5,7 +5,7 @@ import { Download, KeyRound, RefreshCw } from "lucide-react";
 import {
   ACCESS_SCOPES,
   accessStatusBadgeLabel,
-  getOverallAccessSummary,
+  getOverallAccessSummary,  
   scopeRequirement,
 } from "@/lib/access-control";
 import { getHealth } from "@/lib/api";
